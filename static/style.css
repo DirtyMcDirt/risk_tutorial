@@ -1,0 +1,14 @@
+#map {
+    width: 800px;
+    height: 600px;
+    border: 2px solid black;
+}
+.country {
+    position: absolute;
+    border-radius: 50%;
+    text-align: center;
+    color: white;
+}
+#phase-info {
+    margin: 20px;
+}

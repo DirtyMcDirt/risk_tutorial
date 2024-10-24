@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Risk Game</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <h1>Risk Game</h1>
+    <div id="phase-info"></div>
+    <div id="map-container">
+        <div id="map"></div>
+    </div>
+    <button id="next-phase-btn">Next Phase</button>
+
+    <script src="{{ url_for('static', filename='game.js') }}"></script>
+</body>
+</html>

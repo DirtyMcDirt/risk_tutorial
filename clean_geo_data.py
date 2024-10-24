@@ -4,7 +4,7 @@ import numpy as np
 
 print("hello")
 
-geo_data = gpd.read_file("./data/ne_50m_admin_0_countries/ne_50m_admin_0_countries.shp")
+geo_data = gpd.read_file("./data/ne_50m_admin_0_countries.shp")
 
 type(geo_data)
 

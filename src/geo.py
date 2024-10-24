@@ -1,18 +1,14 @@
+from flask import Flask, jsonify, request
 import json
-import pygame as pg
 import random
-from pandas import Series
-
 from shapely.geometry import Point, Polygon
 
-from src.utils import draw_text, draw_multiline_text
-
+app = Flask(__name__)
 
 class Country:
     def __init__(self, name: str, coords: list) -> None:
         self.name = name
         self.coords = coords
-        self.font = pg.font.SysFont(None, 24)
         self.polygon = Polygon(self.coords)
         self.center = self.get_center()
         self.units = random.randint(1, 3)
@@ -22,39 +18,20 @@ class Country:
         self.has_attacked = False
         self.controlled_by = self.name
 
-    def update(self, mouse_pos: pg.Vector2) -> None:
-        self.hovered = False
-        if Point(mouse_pos.x, mouse_pos.y).within(self.polygon):
-            self.hovered = True
+    def get_center(self) -> dict:
+        xs = [x for x, y in self.coords]
+        ys = [y for x, y in self.coords]
+        return {"x": sum(xs) / len(xs), "y": sum(ys) / len(ys)}
 
-    def draw(self, screen: pg.Surface, scroll: pg.Vector2) -> None:
-        pg.draw.polygon(
-            screen,
-            (255, 0, 0) if self.hovered else self.color,
-            [(x - scroll.x, y - scroll.y) for x, y in self.coords],
-        )
-        pg.draw.polygon(
-            screen,
-            (255, 255, 255),
-            [(x - scroll.x, y - scroll.y) for x, y in self.coords],
-            width=1,
-        )
-        draw_text(
-            screen,
-            self.font,
-            str(self.units),
-            (255, 255, 255),
-            self.center.x - scroll.x,
-            self.center.y - scroll.y,
-            True,
-        )
-
-    def get_center(self) -> pg.Vector2:
-        return pg.Vector2(
-            Series([x for x, y in self.coords]).mean(),
-            Series([y for x, y in self.coords]).mean(),
-        )
-
+    def to_dict(self):
+        return {
+            "name": self.name,
+            "units": self.units,
+            "color": self.color,
+            "center": self.center,
+            "controlled_by": self.controlled_by,
+            "neighbours": self.neighbours
+        }
 
 class World:
     MAP_WIDTH = 2.05 * 4000
@@ -64,15 +41,6 @@ class World:
         self.read_geo_data()
         self.countries = self.create_countries()
         self.create_neighbours()
-        self.scroll = pg.Vector2(3650, 395)
-        self.font = pg.font.SysFont(None, 24)
-
-        # hovering countries panel
-        self.hovered_country = None
-        self.hover_surface = pg.Surface((300, 100), pg.SRCALPHA)
-        self.hover_surface.fill((25, 42, 86, 155))
-
-        self.battle_res = None
 
     def read_geo_data(self) -> None:
         with open("./data/country_coords.json", "r") as f:
@@ -81,137 +49,33 @@ class World:
     def create_countries(self) -> dict:
         countries = {}
         for name, coords in self.geo_data.items():
-            xy_coords = []
-            for coord in coords:
-                x = (self.MAP_WIDTH / 360) * (180 + coord[0])
-                y = (self.MAP_HEIGHT / 180) * (90 - coord[1])
-                xy_coords.append(pg.Vector2(x, y))
+            xy_coords = [
+                [(self.MAP_WIDTH / 360) * (180 + coord[0]), (self.MAP_HEIGHT / 180) * (90 - coord[1])]
+                for coord in coords
+            ]
             countries[name] = Country(name, xy_coords)
         return countries
 
-    def draw(self, screen: pg.Surface) -> None:
-        for country in self.countries.values():
-            country.draw(screen, self.scroll)
-        if self.hovered_country is not None:
-            self.draw_hovered_country(screen)
-
-    def update(self) -> None:
-        self.update_camera()
-        mouse_pos = pg.mouse.get_pos()
-        self.hovered_country = None
-        for country in self.countries.values():
-            country.update(
-                pg.Vector2(mouse_pos[0] + self.scroll.x, mouse_pos[1] + self.scroll.y)
-            )
-            if country.hovered:
-                self.hovered_country = country
-
-    def update_camera(self) -> None:
-        keys = pg.key.get_pressed()
-
-        if keys[pg.K_a]:
-            self.scroll.x -= 10
-        elif keys[pg.K_d]:
-            self.scroll.x += 10
-
-        if keys[pg.K_w]:
-            self.scroll.y -= 10
-        elif keys[pg.K_s]:
-            self.scroll.y += 10
-
-        if keys[pg.K_SPACE]:
-            self.scroll = pg.Vector2(3650, 395)
-
-    def draw_hovered_country(self, screen: pg.Surface) -> None:
-        screen.blit(self.hover_surface, (1280 - 310, 720 - 110))
-        draw_text(
-            screen,
-            self.font,
-            self.hovered_country.name,
-            (255, 255, 255),
-            1280 - 310 / 2,
-            720 - 100,
-            True,
-            24,
-        )
-        draw_multiline_text(
-            screen,
-            self.font,
-            [f"Units: {str(self.hovered_country.units)}"],
-            (255, 255, 255),
-            1280 - 310 + 5,
-            720 - 90 + 5,
-            False,
-            20,
-        )
-
     def create_neighbours(self) -> None:
-        for k, v in self.countries.items():
-            v.neighbours = self.get_country_neighbours(k)
+        for name, country in self.countries.items():
+            country.neighbours = self.get_country_neighbours(name)
 
-    def get_country_neighbours(self, country: str) -> list:
+    def get_country_neighbours(self, country_name: str) -> list:
         neighbours = []
-        country_poly = self.countries[country].polygon
-        for other_country_key, other_country_value in self.countries.items():
-            if country != other_country_key:
-                if country_poly.intersects(other_country_value.polygon):
-                    neighbours.append(other_country_key)
-        if country == "United Kingdom":
-            neighbours += ["Ireland", "France", "Iceland"]
-        elif country == "Ireland":
-            neighbours += ["United Kingdom", "Iceland"]
-        elif country == "Iceland":
-            neighbours += ["United Kingdom", "Ireland"]
-        elif country == "France":
-            neighbours += ["United Kingdom"]
-        elif country == "Denmark":
-            neighbours += ["Norway", "Sweden"]
-        elif country == "Norway":
-            neighbours += ["Denmark"]
-        elif country == "Sweden":
-            neighbours += ["Denmark"]
-        elif country == "Finland":
-            neighbours += ["Estonia"]
-        elif country == "Estonia":
-            neighbours += ["Finland"]
+        country_poly = self.countries[country_name].polygon
+        for other_country_name, other_country in self.countries.items():
+            if country_name != other_country_name and country_poly.intersects(other_country.polygon):
+                neighbours.append(other_country_name)
         return neighbours
 
-    def battle(self, attacking_country:str, defending_country:str) -> None:
+    def to_dict(self):
+        return {name: country.to_dict() for name, country in self.countries.items()}
 
-        a_c = self.countries[attacking_country]
-        d_c = self.countries[defending_country]
+world = World()
 
-        a_c.has_attacked = True
+@app.route('/api/countries', methods=['GET'])
+def get_countries():
+    return jsonify(world.to_dict())
 
-        res = {
-            "attacking_country": attacking_country,
-            "defending_country": defending_country,
-            "victory": False,
-            "attacking_country_losses": 0,
-            "defending_country_losses": 0
-        }
-
-        while (a_c.units > 1) and (d_c.units > 0):
-
-            if a_c.units - d_c.units > 2:
-                attack_dice = max(random.randint(1, 6), random.randint(1, 6))
-            else:
-                attack_dice = random.randint(1, 6)
-
-            defend_dice = random.randint(1, 6)
-
-            if attack_dice > defend_dice:
-                d_c.units -= 1
-                res["defending_country_losses"] += 1
-            else:
-                a_c.units -= 1
-                res["attacking_country_losses"] += 1
-
-            if d_c.units == 0:
-                res["victory"] = True
-
-        if res["victory"]:
-            d_c.units = 1
-            a_c.units -= 1
-
-        self.battle_res = res
+if __name__ == "__main__":
+    app.run(debug=True)
